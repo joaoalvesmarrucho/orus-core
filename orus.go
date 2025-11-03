@@ -42,10 +42,6 @@ func (s *Orus) EmbedWithBGE_M3(text string) ([]float32, error) {
 }
 
 func LoadEnv(key string) string {
-	env := os.Getenv("ENV_TYPE")
-	if env != "" {
-		return os.Getenv(key)
-	}
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Println("Error loading.env file " + err.Error())
