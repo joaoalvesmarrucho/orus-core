@@ -17,12 +17,12 @@ type Orus struct {
 func NewOrus() *Orus {
 
 	bge_m3_embedder := bge_m3.NewGolangBGE3M3Embedder().
-		SetMemoryPath(LoadEnv("AGENT_MEMORY_PATH")).
-		SetTokPath(LoadEnv("TOK_PATH")).
-		SetOnnxPath(LoadEnv("ONNX_PATH")).
-		SetRuntimePath(LoadEnv("ONNX_RUNTIME_PATH"))
+		SetMemoryPath(LoadEnv("ORUS_AGENT_MEMORY_PATH")).
+		SetTokPath(LoadEnv("ORUS_TOK_PATH")).
+		SetOnnxPath(LoadEnv("ORUS_ONNX_PATH")).
+		SetRuntimePath(LoadEnv("ORUS_ONNX_RUNTIME_PATH"))
 
-	ollamaClient := NewOllamaClient(LoadEnv("OLLAMA_BASE_URL"))
+	ollamaClient := NewOllamaClient(LoadEnv("ORUS_OLLAMA_BASE_URL"))
 
 	return &Orus{
 		BGEM3Embedder: bge_m3_embedder,
@@ -42,10 +42,6 @@ func (s *Orus) EmbedWithBGE_M3(text string) ([]float32, error) {
 }
 
 func LoadEnv(key string) string {
-	env := os.Getenv("ENV_TYPE")
-	if env != "" {
-		return os.Getenv(key)
-	}
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Println("Error loading.env file " + err.Error())

@@ -22,7 +22,7 @@ type OrusAPI struct {
 func NewOrusAPI() *OrusAPI {
 	return &OrusAPI{
 		Orus:   NewOrus(),
-		Port:   LoadEnv("API_PORT"),
+		Port:   LoadEnv("ORUS_API_PORT"),
 		router: chi.NewRouter(),
 		Verbose: false,
 	}
