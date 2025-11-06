@@ -24,6 +24,7 @@ type OrusAPI struct {
 	Port    string
 	router  *chi.Mux
 	Verbose bool
+	server  *http.Server
 }
 
 type PromptSignals struct {
@@ -40,12 +41,21 @@ func NewOrusAPI() *OrusAPI {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.StripSlashes)
 	router.Use(middleware.URLFormat)
-
+	server := &http.Server{
+		Addr:              ":" + LoadEnv("ORUS_API_PORT"),
+		Handler:           router,
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	return &OrusAPI{
 		Orus:    NewOrus(),
 		Port:    LoadEnv("ORUS_API_PORT"),
 		router:  router,
 		Verbose: false,
+		server:  server,
 	}
 }
 
@@ -74,7 +84,14 @@ func (s *OrusAPI) setupRoutes() {
 func (s *OrusAPI) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	indexView := view.NewView()
-	indexView.RenderIndex(w)
+	models, err := s.OllamaClient.ListModels()
+	if err != nil {
+		log.Printf("IndexHandler: failed to list models: %v", err)
+		http.Error(w, "failed to list models", http.StatusInternalServerError)
+		return
+	}
+	indexView.SetModels(models).
+	RenderIndex(w)
 }
 
 // PromptLLMStream is a handler for the prompt/llm-stream endpoint
@@ -89,18 +106,38 @@ func (s *OrusAPI) PromptLLMStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if signals.Model == "" {
-		signals.Model = "llama-3"
-	}
-	if signals.ResponseMode == "" {
-		signals.ResponseMode = "stream"
-	}
-
 	sse := datastar.NewSSE(w, r)
-	defer func() {
-		_ = sse.ConsoleLog("PromptLLMStream closed")
-	}()
 
+	if signals.OperationType == "embedding" {
+
+		if signals.Model == "nomic-embed-text:latest" {
+			embedding, err := s.OllamaClient.GetEmbedding(signals.Model, signals.Prompt)
+			if err != nil {
+				_ = sse.ConsoleError(fmt.Errorf("embedding error: %w", err))
+				return
+			}
+			signals.Result = fmt.Sprintf("Nomic Embedding (768 dimensions): %v", embedding)
+		} else {
+			embedding, err := s.Orus.BGEM3Embedder.Embed(signals.Prompt)
+			if err != nil {
+				_ = sse.ConsoleError(fmt.Errorf("embedding error: %w", err))
+				return
+			}
+			signals.Result = fmt.Sprintf("BGE-M3 Embedding (1024 dimensions): %v", embedding)
+		}
+		
+		if err := sse.MarshalAndPatchSignals(signals); err != nil {
+			_ = sse.ConsoleError(fmt.Errorf("failed to patch signals: %w", err))
+		}
+		return
+	}
+
+	if signals.Model == "" {
+		signals.Model = "llama3.1:8b"
+	}
+	
+	signals.ResponseMode = "stream"
+	
 	signals.Result = ""
 	if err := sse.MarshalAndPatchSignals(signals); err != nil {
 		_ = sse.ConsoleError(fmt.Errorf("failed to clear result: %w", err))
@@ -143,9 +180,7 @@ func (s *OrusAPI) PromptLLMStream(w http.ResponseWriter, r *http.Request) {
 		if chunk.Message.Content == "" {
 			return
 		}
-
 		signals.Result += chunk.Message.Content
-
 		if err := sse.MarshalAndPatchSignals(signals); err != nil {
 			_ = sse.ConsoleError(fmt.Errorf("failed to patch signals: %w", err))
 		}
@@ -161,14 +196,15 @@ func (s *OrusAPI) PromptLLMStream(w http.ResponseWriter, r *http.Request) {
 // It sets up the routes and starts the server
 func (s *OrusAPI) Start() {
 	s.setupRoutes()
+	log.Println("Orus API ORUS_API_PORT", LoadEnv("ORUS_API_PORT"))
 	log.Println("Orus API ORUS_API_AGENT_MEMORY_PATH", LoadEnv("ORUS_API_AGENT_MEMORY_PATH"))
 	log.Println("Orus API ORUS_API_TOK_PATH", LoadEnv("ORUS_API_TOK_PATH"))
 	log.Println("Orus API ORUS_API_ONNX_PATH", LoadEnv("ORUS_API_ONNX_PATH"))
 	log.Println("Orus API ORUS_API_ONNX_RUNTIME_PATH", LoadEnv("ORUS_API_ONNX_RUNTIME_PATH"))
 	log.Println("Orus API ORUS_API_OLLAMA_BASE_URL", LoadEnv("ORUS_API_OLLAMA_BASE_URL"))
+	log.Println("Orus API server started on port", s.server.Addr)
 
-	log.Printf("Orus API server started on port %s", s.Port)
-	if err := http.ListenAndServe(":"+s.Port, s.router); err != nil {
+	if err := s.server.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
