@@ -359,10 +359,12 @@ func (s *OrusAPI) embedText(model string, text string, startTime time.Time) *Oru
 func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	body, err := io.ReadAll(r.Body)
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	response := NewOrusResponse()
 	request := new(OrusRequest)
 	json.Unmarshal(body, request)
@@ -370,6 +372,7 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 	model := request.Body["model"].(string)
 	messagesRaw := request.Body["messages"]
 	messagesJSON, _ := json.Marshal(messagesRaw)
+	
 	var messages []Message
 	if err := json.Unmarshal(messagesJSON, &messages); err != nil {
 		response.Error = err.Error()
@@ -378,6 +381,7 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 		response.TimeTaken = time.Since(startTime)
 		respondJSON(w, http.StatusBadRequest, response)
 	}
+
 	stream := request.Body["stream"].(bool)
 
 	if stream {
