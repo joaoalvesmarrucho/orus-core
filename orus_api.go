@@ -65,6 +65,7 @@ func (s *OrusAPI) setupRoutes() {
 	s.router.Get("/orus-api/v1/ollama-model-list", s.OllamaModelList)
 	s.router.Post("/orus-api/v1/ollama-pull-model", s.OllamaPullModel)
 	s.router.Post("/orus-api/v1/call-llm", s.CallLLM)
+	s.router.Post("/orus-api/v1/call-llm-cloud", s.CallLLMCloud)
 	s.router.Get("/prompt", s.IndexHandler)
 	s.router.Post("/prompt/llm-stream", s.PromptLLMStream)
 
@@ -489,6 +490,134 @@ func (s *OrusAPI) embedText(model string, text string, startTime time.Time) *Oru
 // @Failure      500  {object}  OrusResponse
 // @Router       /orus-api/v1/call-llm [post]
 func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
+
+	startTime := time.Now()
+
+	response := NewOrusResponse()
+	request := new(OrusRequest)
+
+	if !decodeJSONBody(w, r, request, 2<<20) {
+		return
+	}
+
+	modelVal, ok := request.Body["model"]
+	if !ok {
+		respondError(w, http.StatusBadRequest, "missing_model", "Field 'model' is required")
+		return
+	}
+	model, ok := modelVal.(string)
+	if !ok {
+		respondError(w, http.StatusBadRequest, "invalid_model", "Field 'model' must be a string")
+		return
+	}
+
+	messagesRaw, ok := request.Body["messages"]
+	if !ok {
+		respondError(w, http.StatusBadRequest, "missing_messages", "Field 'messages' is required")
+		return
+	}
+
+	messagesJSON, err := json.Marshal(messagesRaw)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_messages", "Error marshalling messages")
+		return
+	}
+
+	var messages []Message
+	if err := json.Unmarshal(messagesJSON, &messages); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_messages", "Error unmarshalling messages: "+err.Error())
+		return
+	}
+
+	stream := false
+	if val, ok := request.Body["stream"]; ok {
+		if b, ok := val.(bool); ok {
+			stream = b
+		}
+	}
+
+	if stream {
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		content := make([]string, 0)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			respondError(w, http.StatusInternalServerError, "streaming_not_supported", "Streaming not supported")
+			return
+		}
+		flusher.Flush()
+		chatStreamProgressCallback := func(chatResp ChatStreamResponse) {
+			data, _ := json.Marshal(chatResp)
+			fmt.Fprintf(w, "data: %s\n\n", string(data))
+			flusher.Flush()
+			content = append(content, chatResp.Message.Content)
+		}
+		err := s.OllamaClient.ChatStream(ChatRequest{
+			Model:    model,
+			Messages: messages,
+			Stream:   stream,
+		}, chatStreamProgressCallback)
+		if err != nil {
+			errorData, _ := json.Marshal(map[string]string{
+				"status": "error",
+				"error":  err.Error(),
+			})
+			fmt.Fprintf(w, "data: %s\n\n", string(errorData))
+			flusher.Flush()
+			return
+		}
+		successData, _ := json.Marshal(map[string]interface{}{
+			"status":     "success",
+			"message":    "LLM request received successfully",
+			"content":    strings.Join(content, ""),
+			"serial":     uuid.New().String(),
+			"time_taken": time.Since(startTime).String(),
+			"model":      model,
+			"stream":     true,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", string(successData))
+		flusher.Flush()
+		return
+	} else {
+		responseLLM, err := s.OllamaClient.Chat(ChatRequest{
+			Model:    model,
+			Messages: messages,
+			Stream:   stream,
+		})
+		if err != nil {
+			response.Error = err.Error()
+			response.Message = "Error calling LLM"
+			response.Success = false
+			response.TimeTaken = time.Since(startTime)
+			respondJSON(w, http.StatusInternalServerError, response)
+		} else {
+			successData := map[string]interface{}{
+				"success":    true,
+				"message":    "LLM request received successfully",
+				"content":    responseLLM.Message.Content,
+				"serial":     uuid.New().String(),
+				"time_taken": time.Since(startTime).String(),
+				"model":      model,
+				"stream":     stream,
+			}
+			respondJSON(w, http.StatusOK, successData)
+		}
+	}
+}
+
+// CallLLM godoc
+// @Summary      Calls the LLM using the Ollama client
+// @Description  Calls the LLM using the Ollama client
+// @Tags         llm
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  OrusResponse
+// @Failure      500  {object}  OrusResponse
+// @Router       /orus-api/v1/call-llm [post]
+func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 
 	startTime := time.Now()
 
