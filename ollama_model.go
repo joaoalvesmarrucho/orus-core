@@ -8,6 +8,7 @@ type ChatRequest struct {
 	Stream   bool      `json:"stream" swaggertype:"boolean" example:"true"`
 	Format   string    `json:"format" swaggertype:"string" example:"json"`
 	Think    bool      `json:"think" swaggertype:"boolean" example:"true"`
+	Images   []string    `json:"images" swaggertype:"array" example:"['base64 encoded image 1', 'base64 encoded image 2']"`
 }
 
 type Message struct {

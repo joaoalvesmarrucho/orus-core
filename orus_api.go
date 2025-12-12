@@ -573,6 +573,14 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 		chatRequest.Format = format
 	}
 
+	if imagesVal, ok := request.Body["images"]; ok {
+		images, ok := imagesVal.([]string)
+		chatRequest.Images = make([]string, 0)
+		if ok {
+			chatRequest.Images = append(chatRequest.Images, images...)
+		}
+	}
+
 	if stream {
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -716,6 +724,14 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		format, _ := formatValVal.(string)
 		chatRequest.Format = format
+	}
+
+	if imagesVal, ok := request.Body["images"]; ok {
+		images, ok := imagesVal.([]string)
+		chatRequest.Images = make([]string, 0)
+		if ok {
+			chatRequest.Images = append(chatRequest.Images, images...)
+		}
 	}
 	
 	if stream {
