@@ -35,12 +35,22 @@ type PromptSignals struct {
 	Result        string `json:"result"`
 }
 
+const MaxBodySize = 20 * 1024 * 1024
+
 func NewOrusAPI() *OrusAPI {
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.StripSlashes)
 	router.Use(middleware.URLFormat)
+
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, MaxBodySize)
+			next.ServeHTTP(w, r)
+		})
+	})
+	
 	server := &http.Server{
 		Addr:              ":" + LoadEnv("ORUS_API_PORT"),
 		Handler:           router,
