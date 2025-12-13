@@ -712,7 +712,14 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 			chatRequest.Images = append(chatRequest.Images, images...)
 		}
 	}
-	
+
+	chatRequest.Model = model
+
+	log.Println("chatRequest--->", chatRequest)
+	log.Println("model--->", model)
+	log.Println("think--->", think)
+	log.Println("stream--->", stream)
+
 	if stream {
 
 		w.Header().Set("Content-Type", "text/event-stream")
