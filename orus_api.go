@@ -265,27 +265,27 @@ func (s *OrusAPI) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 func (s *OrusAPI) EmbedText(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	request := new(OrusRequest)
+	type Req struct {
+		Model string `json:"model"`
+		Text string `json:"text"`
+	}
 
-	modelVal, ok := request.Body["model"]
-	if !ok {
+    request := new(Req)
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
+		return
+	}
+
+	model := request.Model
+	if model == "" {
 		respondError(w, http.StatusBadRequest, "missing_model", "Field 'model' is required")
 		return
 	}
-	model, ok := modelVal.(string)
-	if !ok {
-		respondError(w, http.StatusBadRequest, "invalid_model", "Field 'model' must be a string")
-		return
-	}
 
-	textVal, ok := request.Body["text"]
-	if !ok {
+	text := request.Text
+	if text == "" {
 		respondError(w, http.StatusBadRequest, "missing_text", "Field 'text' is required")
-		return
-	}
-	text, ok := textVal.(string)
-	if !ok {
-		respondError(w, http.StatusBadRequest, "invalid_text", "Field 'text' must be a string")
 		return
 	}
 
@@ -351,11 +351,18 @@ func (s *OrusAPI) OllamaModelList(w http.ResponseWriter, r *http.Request) {
 // @Failure      500  {object}  OrusResponse
 // @Router       /orus-api/v1/ollama-pull-model [post]
 func (s *OrusAPI) OllamaPullModel(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	type Req struct {
 		Name string `json:"name"`
 	}
 
-	if req.Name == "" {
+    request := new(Req)
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
+		return
+	}
+
+	if request.Name == "" {
 		respondError(w, http.StatusBadRequest, "missing_name", "Field 'name' is required")
 		return
 	}
@@ -385,7 +392,7 @@ func (s *OrusAPI) OllamaPullModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.OllamaClient.PullModel(req.Name, progressCallback); err != nil {
+	if err := s.OllamaClient.PullModel(request.Name, progressCallback); err != nil {
 		errorData, _ := json.Marshal(map[string]string{
 			"status": "error",
 			"error":  err.Error(),
@@ -397,7 +404,7 @@ func (s *OrusAPI) OllamaPullModel(w http.ResponseWriter, r *http.Request) {
 
 	successData, _ := json.Marshal(map[string]string{
 		"status":  "success",
-		"message": fmt.Sprintf("Model %s downloaded successfully", req.Name),
+		"message": fmt.Sprintf("Model %s downloaded successfully", request.Name),
 	})
 	fmt.Fprintf(w, "data: %s\n\n", string(successData))
 	flusher.Flush()
@@ -496,7 +503,15 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 	response := NewOrusResponse()
 	request := new(OrusRequest)
 
-	modelVal, ok := request.Body["model"]
+	request.Body = make(map[string]interface{})
+	if err := json.NewDecoder(r.Body).Decode(&request.Body); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
+		return
+	}
+
+    data := request.Body["body"].(map[string]interface{})
+
+	modelVal, ok := data["model"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_model", "Field 'model' is required")
 		return
@@ -507,7 +522,7 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thinkValVal, ok := request.Body["think"]
+	thinkValVal, ok := data["think"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_think", "Field 'think' is required")
 		return
@@ -518,7 +533,7 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messagesRaw, ok := request.Body["messages"]
+	messagesRaw, ok := data["messages"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_messages", "Field 'messages' is required")
 		return
@@ -537,7 +552,7 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stream := false
-	if val, ok := request.Body["stream"]; ok {
+	if val, ok := data["stream"]; ok {
 		if b, ok := val.(bool); ok {
 			stream = b
 		}
@@ -550,18 +565,14 @@ func (s *OrusAPI) CallLLM(w http.ResponseWriter, r *http.Request) {
 		Think:    think,
 	}
 
-	formatValVal, ok := request.Body["format"]
+	formatValVal, ok := data["format"]
 	if ok {
 		format, _ := formatValVal.(string)
 		chatRequest.Format = format
 	}
 
-	if imagesVal, ok := request.Body["images"]; ok {
-		images, ok := imagesVal.([]string)
-		chatRequest.Images = make([]string, 0)
-		if ok {
-			chatRequest.Images = append(chatRequest.Images, images...)
-		}
+	if imagesVal, ok := data["images"].([]interface{}); ok {
+		chatRequest.Images = ConvertInterfaceToStrings(imagesVal)
 	}
 
 	if stream {
@@ -645,7 +656,15 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 	response := NewOrusResponse()
 	request := new(OrusRequest)
 
-	modelVal, ok := request.Body["model"]
+	request.Body = make(map[string]interface{})
+	if err := json.NewDecoder(r.Body).Decode(&request.Body); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
+		return
+	}
+
+    data := request.Body["body"].(map[string]interface{})
+	
+	modelVal, ok := data["model"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_model", "Field 'model' is required")
 		return
@@ -656,7 +675,7 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thinkValVal, ok := request.Body["think"]
+	thinkValVal, ok := data["think"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_think", "Field 'think' is required")
 		return
@@ -667,7 +686,7 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messagesRaw, ok := request.Body["messages"]
+	messagesRaw, ok := data["messages"]
 	if !ok {
 		respondError(w, http.StatusBadRequest, "missing_messages", "Field 'messages' is required")
 		return
@@ -686,7 +705,7 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stream := false
-	if val, ok := request.Body["stream"]; ok {
+	if val, ok := data["stream"]; ok {
 		if b, ok := val.(bool); ok {
 			stream = b
 		}
@@ -699,18 +718,14 @@ func (s *OrusAPI) CallLLMCloud(w http.ResponseWriter, r *http.Request) {
 		Think:    think,
 	}
 
-	formatValVal, ok := request.Body["format"]
+	formatValVal, ok := data["format"]
 	if ok {
 		format, _ := formatValVal.(string)
 		chatRequest.Format = format
 	}
 
-	if imagesVal, ok := request.Body["images"]; ok {
-		images, ok := imagesVal.([]string)
-		chatRequest.Images = make([]string, 0)
-		if ok {
-			chatRequest.Images = append(chatRequest.Images, images...)
-		}
+	if imagesVal, ok := data["images"].([]interface{}); ok {
+		chatRequest.Images = ConvertInterfaceToStrings(imagesVal)
 	}
 
 	chatRequest.Model = model
