@@ -18,19 +18,19 @@ services:
       - OLLAMA_API_KEY=52b8c58f60084191be50f9a6b609c60f.A-gkOw1rLduYusbeg2o8hOrL
     ports:
       - "8081:8081"
-    volumes:
-      - ../../onnx:/go/bin/onnx
     networks:
       - orus_network
 
   ollama:
-    image: ollama/ollama:rocm
+    image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
       - /dev/kfd:/dev/kfd
       - /dev/dri/:/dev/dri
+      - /usr/local/musa:/usr/local/musa
+      - /lib/modules:/lib/modules:ro
     environment:
       - HSA_OVERRIDE_GFX_VERSION=10.3.0
       - OLLAMA_HOST=0.0.0.0
@@ -38,6 +38,9 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=6
       - OLLAMA_KEEP_ALIVE=30m
       - OLLAMA_DEBUG=1
+      - MUSA_VISIBLE_DEVICES=0
+      - MUSA_DEVICE_ORDER=PCI_BUS_ID
+      - OLLAMA_NUM_THREADS=16
     restart: unless-stopped
     deploy:
       resources:
@@ -54,9 +57,6 @@ volumes:
   ollama_dev_data:
     driver: local
   go_cache:
-    driver: local  
-  onnx_data:
-    driver: local
-    name: onnx_data      
+    driver: local       
   ollama_data: 
     driver: local

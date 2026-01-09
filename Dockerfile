@@ -68,17 +68,12 @@ RUN python3 -m venv /opt/venv && \
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
-ENV LD_LIBRARY_PATH=/go/bin/onnx/aarch64:$LD_LIBRARY_PATH
 
 COPY --from=build /go/src/orus-api .
 
 COPY .env /go/bin/.env
 
 RUN chmod 644 /go/bin/.env
-
-RUN mkdir -p  /go/bin/onnx
-
-COPY ./onnx/. /go/bin/onnx/
 
 RUN useradd -u 799 -m orus-api && \
     chown -R orus-api:orus-api /go/bin && \
